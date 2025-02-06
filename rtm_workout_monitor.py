@@ -69,16 +69,13 @@ def process_image(pose_tracker, frame):
             "Knee": error_knee
         }
 
-        # Smaller font size for the text
-        font_scale = 0.5  # Smaller text size
-        thickness = 2
-        start_x, start_y = 20, frame.shape[0] + 20  # Start drawing text in the white space
-        line_spacing = 20
-
 
         # Draw error labels in the white space at the bottom with color based on condition status
+        font_scale = 0.5
+        thickness = 2
+        start_x, start_y = 20, frame.shape[0] + 20
+        line_spacing = 20
         for i, (label, value) in enumerate(errors.items()):
-            # Get the corresponding condition to determine the color
             condition_color = (0, 255, 0) if conditions[label] else (0, 0, 255)
             label_text = f"{label} error: {value:.2f}"
             cv2.putText(img_show, label_text, (start_x, start_y + i * line_spacing), cv2.FONT_HERSHEY_SIMPLEX, font_scale, condition_color, thickness)
@@ -99,12 +96,10 @@ def workout_monitoring(input_path, output_path):
     Capture video from the webcam or process recorded images from a directory, estimate poses using RTM, and display the annotated poses live.
     '''
     
+    # init rtm pose tracker
     pose_tracker = initialize_pose_tracker(pose_model='HALPE_26', mode='balanced', det_frequency=1, tracking=False)
 
-
-    # Process input from image directory
-
-    # get floor height and body height
+    # calculate some parameters
     global REL_ANKLE_HEIGHT
     global BODY_HEIGHT
     global FLOOR_HEIGHT
@@ -112,6 +107,7 @@ def workout_monitoring(input_path, output_path):
     REL_ANKLE_HEIGHT = (ANKLE_HEIGHT / BODY_HEIGHT) * 100
     squat_data = []
 
+    # Process input from image directory
     for i, [start_frame, end_frame] in enumerate(squat_segments):
 
         [CONDITION_HEEL, CONDITION_FEMUR, CONDITION_KNEE] = [True, True, True]
@@ -155,14 +151,14 @@ def workout_monitoring(input_path, output_path):
             output_file = os.path.join(output_path, frame_file)
             cv2.imwrite(output_file, output)
 
-            # # Introduce a delay if needed
+            # # Delay to match the FPS
             # time.sleep(1 / FPS)
 
             # Exit on pressing 'q'
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         
-        # Append squat data including frames with highest errors
+        # Append squat data
         squat_data.append([[start_frame, end_frame], condition_dict, error_dict, max_error_frames])
 
 
@@ -176,9 +172,9 @@ def workout_monitoring(input_path, output_path):
 
 def save_to_excel(excel_file, participant_data):
     with pd.ExcelWriter(excel_file, engine='xlsxwriter') as writer:
-        workbook = writer.book  # Get the workbook for formatting
+        workbook = writer.book
 
-        # Try to access the first sheet, or create a new one if it doesn't exist
+        # Access sheet
         if 'Squat Evaluation' in writer.sheets:
             worksheet = writer.sheets['Squat Evaluation']
         else:
@@ -202,28 +198,24 @@ def save_to_excel(excel_file, participant_data):
         for col_num, value in enumerate(headers):
             worksheet.write(0, col_num, value, header_format)
 
-        # Starting row for data
+
         row = 1
-
         for participant, data in participant_data.items():
-            # Write participant name in the first column
             worksheet.write(row, 0, participant)
-
 
             # Process data for this participant
             for index, squat in enumerate(data):
-                # Combine Squat Number, Start Frame, and End Frame into a single cell
                 formatted_data = [
                     f"Squat {index + 1} ({squat[0][0]}-{squat[0][1]})",
-                    str(squat[1]["CONDITION_HEEL"]),  # Convert to string
-                    str(squat[2]["ERROR_HEEL"]),  # Convert to string
-                    str(squat[3]["ERROR_HEEL"]),  # Convert to string
-                    str(squat[1]["CONDITION_FEMUR"]),  # Convert to string
-                    str(squat[2]["ERROR_FEMUR"]),  # Convert to string
-                    str(squat[3]["ERROR_FEMUR"]),  # Convert to string
-                    str(squat[1]["CONDITION_KNEE"]),  # Convert to string
-                    str(squat[2]["ERROR_KNEE"]),  # Convert to string
-                    str(squat[3]["ERROR_KNEE"])  # Convert to string
+                    str(squat[1]["CONDITION_HEEL"]),
+                    str(squat[2]["ERROR_HEEL"]),
+                    str(squat[3]["ERROR_HEEL"]),
+                    str(squat[1]["CONDITION_FEMUR"]),
+                    str(squat[2]["ERROR_FEMUR"]),
+                    str(squat[3]["ERROR_FEMUR"]),
+                    str(squat[1]["CONDITION_KNEE"]),
+                    str(squat[2]["ERROR_KNEE"]),
+                    str(squat[3]["ERROR_KNEE"])
                     ]
 
 
@@ -231,10 +223,7 @@ def save_to_excel(excel_file, participant_data):
                 for col_num, value in enumerate(formatted_data):
                     worksheet.write(row, col_num + 1, value)
 
-                # Move to the next row for the next squat
                 row += 1
-
-            # Add a blank row after each participant's data
             row += 1
 
 
@@ -253,13 +242,8 @@ if __name__ == "__main__":
         output_path = os.path.join(data_dir, "output", participant_dir)
         os.makedirs(output_path, exist_ok=True)
         
-        # Assuming you have a function `workout_monitoring` that processes the data
         squat_data = workout_monitoring(input_path, output_path)
-        
-        # Print the data to ensure it's being processed
         print(f"Squat data for participant {participant}: {squat_data}")
-
-        # Ensure the data is being correctly added to participant_data
         participant_data[participant] = squat_data
         print(f"Added data for participant {participant}")
 

@@ -78,7 +78,7 @@ def initialize_pose_tracker(pose_model='HALPE_26', mode='balanced', det_frequenc
     )
 
 
-
+# find keypoint by name
 def get_kp(keypoints, keypoint_name):
 
     if keypoint_name in BODY_KEYPOINTS:
@@ -92,7 +92,7 @@ def get_kp(keypoints, keypoint_name):
 
 
 
-# Function to apply smoothing to the data
+# smoothing with savgol
 def apply_smoothing(data, window_length=15, polyorder=3):
     return savgol_filter(data, window_length=window_length, polyorder=polyorder)
 
