@@ -1,0 +1,8 @@
+opencv-python
+numpy
+mediapipe
+rtm
+rtmlib
+natsort
+xlsxwriter
+onnxruntime
