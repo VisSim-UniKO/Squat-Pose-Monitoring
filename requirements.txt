@@ -6,3 +6,9 @@ rtmlib
 natsort
 xlsxwriter
 onnxruntime
+tqdm
+pandas
+openvino
+gtts
+pygame
+pyautogui

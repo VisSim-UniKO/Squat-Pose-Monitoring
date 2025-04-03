@@ -2,10 +2,11 @@ import logging
 import onnxruntime as ort
 from rtmlib import BodyWithFeet, Wholebody, Body, PoseTracker
 import os
-from image_utils import frame_enumerator, blur
+from image_utils import frame_enumerator
 from scipy.signal import savgol_filter
 import scipy.signal as signal
 import numpy as np
+import cv2
 import matplotlib.pyplot as plt
 
 
@@ -65,6 +66,7 @@ def initialize_pose_tracker(pose_model='HALPE_26', mode='balanced', det_frequenc
     )
     
     logging.info(f"Using {backend} backend with {device.upper()}.")
+    print("Using", backend, "backend with", device.upper())
 
     # Initialize and return the pose tracker
     return PoseTracker(
@@ -78,21 +80,39 @@ def initialize_pose_tracker(pose_model='HALPE_26', mode='balanced', det_frequenc
     )
 
 
-# find keypoint by name
-def get_kp(keypoints, keypoint_name):
 
+def get_kp(keypoints, keypoint_name, swap_side=False):
+    """
+    Retrieve the coordinates of a specific keypoint from the keypoints array.
+
+    Args:
+        keypoints (list): List of keypoints with their coordinates.
+        keypoint_name (str): Name of the keypoint to retrieve (e.g., 'LEar', 'REar').
+        swap_side (bool): If True, swaps 'L' and 'R' in the keypoint name (e.g., 'LEar' to 'REar').
+
+    Returns:
+        tuple: Coordinates of the keypoint (x, y) or None if the keypoint is not found.
+    """
     if keypoint_name in BODY_KEYPOINTS:
+        if swap_side:
+            prevname = keypoint_name
+            # Swap the first letter of keypoint_name from 'R' to 'L' or 'L' to 'R'
+            if keypoint_name.startswith('R'):
+                keypoint_name = 'L' + keypoint_name[1:]
+            elif keypoint_name.startswith('L'):
+                keypoint_name = 'R' + keypoint_name[1:]
+            print("Swapped keypoint name from", prevname, "to", keypoint_name)
+        
         keypoint_id = BODY_KEYPOINTS[keypoint_name]
         keypoint = keypoints[keypoint_id]
         return keypoint
     else:
         logging.warning(f"Keypoint name '{keypoint_name}' not found in BODY_KEYPOINTS.")
         return None
-    
 
 
 
-# smoothing with savgol
+# Function to apply smoothing to the data
 def apply_smoothing(data, window_length=15, polyorder=3):
     return savgol_filter(data, window_length=window_length, polyorder=polyorder)
 
@@ -159,16 +179,68 @@ def init_squats(input_source, pose_tracker, side):
         logging.warning(f"Could not find squat segments. Using full video.")
 
     return floor_height, ankle_height, body_height, squat_segments
+
+# blur face at center of ear keypoints, width region size 0.2 times the body height
+import cv2
+
+def blur_face(frame, keypoints, body_height):
+    # Get positions of the ears
+    left_ear = get_kp(keypoints, 'LEar')
+    right_ear = get_kp(keypoints, 'REar')
     
+    # Calculate the center and size of the blur region
+    blur_center = (
+        int((left_ear[0] + right_ear[0]) / 2), 
+        int((left_ear[1] + right_ear[1]) / 2)
+    )
+    blur_size = int(0.2 * body_height)
+    
+    # Define the bounding box for the blur region
+    x1 = max(0, int(blur_center[0] - blur_size / 2))
+    y1 = max(0, int(blur_center[1] - blur_size / 2))
+    x2 = min(frame.shape[1], int(blur_center[0] + blur_size / 2))
+    y2 = min(frame.shape[0], int(blur_center[1] + blur_size / 2))
+
+    kernel_size = max(10, int(0.05 * body_height) // 2 * 2 + 1)  # Kernel size must be odd
+
+    
+    # Blur the face region
+    face_region = frame[y1:y2, x1:x2]
+    frame[y1:y2, x1:x2] = cv2.GaussianBlur(face_region, (kernel_size, kernel_size), 0)
+
+    return frame
 
 
-def blur_face(image, keypoints, body_height):
+def calculate_pose_angle(point1, point2, point3):
+    v0 = np.array(point2) - np.array(point1)
+    v1 = np.array(point3) - np.array(point2)
+    angle = np.arctan2(np.linalg.det([v0, v1]), np.dot(v0, v1))  # Use np.arctan2 instead of np.math.atan2
+    angle_deg = np.degrees(angle)
+    return angle_deg
 
-    ear_l = get_kp(keypoints, 'LEar')
-    ear_r = get_kp(keypoints, 'REar')
-    avg_face = [(ear_l[0] + ear_r[0]) / 2, (ear_l[1] + ear_r[1]) / 2]
-    radius = body_height / 10
 
-    image = blur(image, avg_face[0], avg_face[1], radius)
+def calculate_clockwise_angle(v1_start, v1_end, v2_start, v2_end):
+    """
+    Calculate the clockwise angle between two vectors defined by their start and end points.
 
-    return image
+    Args:
+        v1_start (tuple): Start point of the first vector (x, y).
+        v1_end (tuple): End point of the first vector (x, y).
+        v2_start (tuple): Start point of the second vector (x, y).
+        v2_end (tuple): End point of the second vector (x, y).
+
+    Returns:
+        float: The clockwise angle in degrees (0 to 360).
+    """
+    # Define the two vectors
+    v1 = np.array(v1_end) - np.array(v1_start)
+    v2 = np.array(v2_end) - np.array(v2_start)
+
+    # Calculate the signed angle using arctan2
+    angle = np.arctan2(np.linalg.det([v1, v2]), np.dot(v1, v2))  # Angle in radians
+
+    # Convert to degrees and normalize to the range [0, 360)
+    angle_deg = np.degrees(angle)
+    clockwise_angle = angle_deg if angle_deg >= 0 else 360 + angle_deg
+
+    return clockwise_angle

@@ -1,0 +1,1 @@
+[0:a]adelay=1466|1466[aud0];[aud0]concat=n=1:v=0:a=1[outa]
